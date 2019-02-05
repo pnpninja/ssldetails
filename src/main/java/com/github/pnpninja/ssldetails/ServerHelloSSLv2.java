@@ -9,9 +9,21 @@ import java.security.cert.X509Certificate;
 
 final class ServerHelloSSLv2 {
 
-	int[] cipherSuites;
-	String serverCertName;
-	String serverCertHash;
+	private int[] cipherSuites;
+	private String serverCertName;
+	private String serverCertHash;
+
+	public int[] getCipherSuites() {
+		return cipherSuites;
+	}
+
+	public String getServerCertName() {
+		return serverCertName;
+	}
+
+	public String getServerCertHash() {
+		return serverCertHash;
+	}
 
 	ServerHelloSSLv2(InputStream in)
 		throws IOException

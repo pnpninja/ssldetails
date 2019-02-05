@@ -9,13 +9,41 @@ import java.security.cert.X509Certificate;
 
 final class ServerHello {
 
-	int recordVersion;
-	int protoVersion;
-	long serverTime;
-	int cipherSuite;
-	int compression;
-	String serverCertName;
-	String serverCertHash;
+	private int recordVersion;
+	private int protoVersion;
+	private long serverTime;
+	private int cipherSuite;
+	private int compression;
+	private String serverCertName;
+	private String serverCertHash;
+
+	public int getRecordVersion() {
+		return recordVersion;
+	}
+
+	public int getProtoVersion() {
+		return protoVersion;
+	}
+
+	public long getServerTime() {
+		return serverTime;
+	}
+
+	public int getCipherSuite() {
+		return cipherSuite;
+	}
+
+	public int getCompression() {
+		return compression;
+	}
+
+	public String getServerCertName() {
+		return serverCertName;
+	}
+
+	public String getServerCertHash() {
+		return serverCertHash;
+	}
 
 	ServerHello(InputStream in)
 		throws IOException

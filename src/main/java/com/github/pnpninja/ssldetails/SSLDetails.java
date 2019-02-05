@@ -27,8 +27,72 @@ public class SSLDetails {
 		System.err.println("usage: TestSSLServer servername [ port ]");
 		System.exit(1);
 	}
+	
+	private static void addCipherSuiteDetails(List<CipherSuite> cipherSuite,int suite) {
+		CipherSuite cs = Constants.CIPHER_SUITES.get(suite);
+		if (cs != null) {
+			cipherSuite.add(cs);
+		} 
+	}
+	
+	public static List<CipherSuite> getCipherSuites(String name,int port,Proxy proxy){
+		List<CipherSuite> cipherSuites = new ArrayList<CipherSuite>();
+		InetSocketAddress isa = new InetSocketAddress(name, port);
 
-	public static void printSSLDetails(String name, int port) {
+		Set<Integer> sv = new TreeSet<Integer>();
+		boolean compress = false;
+		for (int v = 0x0300; v <= 0x0303; v ++) {
+			ServerHello sh = connect(isa,
+				v, Constants.CIPHER_SUITES.keySet(),proxy);
+			if (sh == null) {
+				continue;
+			}
+			sv.add(sh.getProtoVersion());
+			if (sh.getCompression() == 1) {
+				compress = true;
+			}
+		}
+
+		ServerHelloSSLv2 sh2 = connectV2(isa,proxy);
+
+		if (sh2 != null) {
+			sv.add(0x0200);
+		}
+
+		if (sv.size() == 0) {
+			return cipherSuites;
+		}
+
+		Set<Integer> lastSuppCS = null;
+		Map<Integer, Set<Integer>> suppCS =
+			new TreeMap<Integer, Set<Integer>>();
+		Set<String> certID = new TreeSet<String>();
+
+		if (sh2 != null) {
+			Set<Integer> vc2 = new TreeSet<Integer>();
+			for (int c : sh2.getCipherSuites()) {
+				addCipherSuiteDetails(cipherSuites, c);
+			}
+		}
+
+		for (int v : sv) {
+			if (v == 0x0200) {
+				continue;
+			}
+			Set<Integer> vsc = supportedSuites(isa, v, certID,proxy);
+			suppCS.put(v, vsc);
+			if (lastSuppCS == null || !lastSuppCS.equals(vsc)) {
+				for (int c : vsc) {
+					addCipherSuiteDetails(cipherSuites, c);
+				}
+				lastSuppCS = vsc;
+			}
+		}
+		return cipherSuites;
+	}
+	
+
+	public static void printSSLDetails(String name, int port,Proxy proxy) {
 		
 		InetSocketAddress isa = new InetSocketAddress(name, port);
 
@@ -36,17 +100,17 @@ public class SSLDetails {
 		boolean compress = false;
 		for (int v = 0x0300; v <= 0x0303; v ++) {
 			ServerHello sh = connect(isa,
-				v, Constants.CIPHER_SUITES.keySet());
+				v, Constants.CIPHER_SUITES.keySet(),proxy);
 			if (sh == null) {
 				continue;
 			}
-			sv.add(sh.protoVersion);
-			if (sh.compression == 1) {
+			sv.add(sh.getProtoVersion());
+			if (sh.getCompression() == 1) {
 				compress = true;
 			}
 		}
 
-		ServerHelloSSLv2 sh2 = connectV2(isa);
+		ServerHelloSSLv2 sh2 = connectV2(isa,proxy);
 
 		if (sh2 != null) {
 			sv.add(0x0200);
@@ -75,7 +139,7 @@ public class SSLDetails {
 		if (sh2 != null) {
 			System.out.println("  " + versionString(0x0200));
 			Set<Integer> vc2 = new TreeSet<Integer>();
-			for (int c : sh2.cipherSuites) {
+			for (int c : sh2.getCipherSuites()) {
 				vc2.add(c);
 			}
 			for (int c : vc2) {
@@ -83,9 +147,10 @@ public class SSLDetails {
 					+ cipherSuiteStringV2(c));
 			}
 			suppCS.put(0x0200, vc2);
-			if (sh2.serverCertName != null) {
-				certID.add(sh2.serverCertHash
-					+ ": " + sh2.serverCertName);
+			if (sh2.getServerCertName() != null) {
+				certID.add(sh2.getServerCertHash()
+					+ ": " + sh2.getServerCertName());
+				
 			}
 		}
 
@@ -93,7 +158,7 @@ public class SSLDetails {
 			if (v == 0x0200) {
 				continue;
 			}
-			Set<Integer> vsc = supportedSuites(isa, v, certID);
+			Set<Integer> vsc = supportedSuites(isa, v, certID,proxy);
 			suppCS.put(v, vsc);
 			if (lastSuppCS == null || !lastSuppCS.equals(vsc)) {
 				System.out.println("  " + versionString(v));
@@ -127,7 +192,7 @@ public class SSLDetails {
 			agMinStrength = Math.min(
 				minStrength(vsc), agMinStrength);
 			if (!vulnBEAST) {
-				vulnBEAST = testBEAST(isa, v, vsc);
+				vulnBEAST = testBEAST(isa, v, vsc,proxy);
 			}
 		}
 		System.out.println("Minimal encryption strength:     "
@@ -179,43 +244,51 @@ public class SSLDetails {
 		
 		
 		static Set<Integer> supportedSuites(InetSocketAddress isa, int version,
-				Set<String> serverCertID)
+				Set<String> serverCertID,Proxy proxy)
 			{
 				Set<Integer> cs = new TreeSet<Integer>(Constants.CIPHER_SUITES.keySet());
 				Set<Integer> rs = new TreeSet<Integer>();
 				for (;;) {
-					ServerHello sh = connect(isa, version, cs);
+					ServerHello sh = connect(isa, version, cs,proxy);
 					if (sh == null) {
 						break;
 					}
-					if (!cs.contains(sh.cipherSuite)) {
+					if (!cs.contains(sh.getCipherSuite())) {
 						System.err.printf("[ERR: server wants to use"
 							+ " cipher suite 0x%04X which client"
-							+ " did not announce]", sh.cipherSuite);
+							+ " did not announce]", sh.getCipherSuite());
 						System.err.println();
 						break;
 					}
-					cs.remove(sh.cipherSuite);
-					rs.add(sh.cipherSuite);
-					if (sh.serverCertName != null) {
-						serverCertID.add(sh.serverCertHash
-							+ ": " + sh.serverCertName);
+					cs.remove(sh.getCipherSuite());
+					rs.add(sh.getCipherSuite());
+					if (sh.getServerCertName() != null) {
+						serverCertID.add(sh.getServerCertHash()
+							+ ": " + sh.getServerCertHash());
 					}
 				}
 				return rs;
 			}
+		static ServerHello connect(InetSocketAddress isa,
+				int version, Collection<Integer> cipherSuites) {
+			return connect(isa,version,cipherSuites,null);
+		}
 		/*
 		 * Connect to the server, send a ClientHello, and decode the
 		 * response (ServerHello). On error, null is returned.
 		 */
 		static ServerHello connect(InetSocketAddress isa,
-			int version, Collection<Integer> cipherSuites)
+			int version, Collection<Integer> cipherSuites,Proxy proxy)
 		{
 			Socket s = null;
 			try {
 //				SocketAddress proxyAddr = new InetSocketAddress("127.0.0.1", 9150);
 //		        Proxy pr = new Proxy(Proxy.Type.SOCKS,proxyAddr);
-				s = new Socket();
+				if(proxy!=null) {
+					s = new Socket(proxy);
+				}else {
+					s = new Socket();
+				}
 				try {
 					s.connect(isa);
 					
@@ -243,16 +316,23 @@ public class SSLDetails {
 			}
 			return null;
 		}
-
+		static ServerHelloSSLv2 connectV2(InetSocketAddress isa) {
+			return connectV2(isa,null);
+		}
 		/*
 		 * Connect to the server, send a SSLv2 CLIENT HELLO, and decode
 		 * the response (SERVER HELLO). On error, null is returned.
 		 */
-		static ServerHelloSSLv2 connectV2(InetSocketAddress isa)
+		static ServerHelloSSLv2 connectV2(InetSocketAddress isa,Proxy proxy)
+		
 		{
 			Socket s = null;
 			try {
-				s = new Socket();
+				if(proxy!=null) {
+					s = new Socket(proxy);
+				}else {
+					s = new Socket();
+				}			
 				try {
 					s.connect(isa);
 				} catch (IOException ioe) {
@@ -423,7 +503,7 @@ public class SSLDetails {
 			}
 
 			static boolean testBEAST(InetSocketAddress isa,
-				int version, Set<Integer> supp)
+				int version, Set<Integer> supp,Proxy proxy)
 			{
 				/*
 				 * TLS 1.1+ is not vulnerable to BEAST.
@@ -464,8 +544,8 @@ public class SSLDetails {
 				}
 				List<Integer> ns = new ArrayList<Integer>(strongCBC);
 				ns.addAll(strongStream);
-				ServerHello sh = connect(isa, version, ns);
-				return !strongStream.contains(sh.cipherSuite);
+				ServerHello sh = connect(isa, version, ns,proxy);
+				return !strongStream.contains(sh.getCipherSuite());
 			}
 			
 			static final String strengthString(int strength)
