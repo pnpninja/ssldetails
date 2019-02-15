@@ -14,6 +14,7 @@ public class MainClass {
 		SSLDetails.printSSLDetails("google.com", 443,pr);
 		List<CipherSuite> cs = SSLDetails.getCipherSuites("google.com", 443,pr);
 		System.out.println(cs.size());
+		System.out.println("Test commit");
 
 	}
 
